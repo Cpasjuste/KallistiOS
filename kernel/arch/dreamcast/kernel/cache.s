@@ -4,11 +4,17 @@
 ! Routine to flush parts of cache.. thanks to the Linux-SH guys
 ! for the algorithm. The original version of this routine was
 ! taken from sh-stub.c.
+!
+! Optimized and extended by SWAT <http://www.dc-swat.ru>
+!
 
 	.text
 	.globl _icache_flush_range
 	.globl _dcache_inval_range
 	.globl _dcache_flush_range
+	.globl _dcache_purge_range
+	.globl _dcache_pref_range
+	.globl _dcache_alloc_range
 
 ! r4 is starting address
 ! r5 is count
@@ -93,30 +99,12 @@ _dcache_inval_range:
 	add	r4,r5
 	mov.l	l1align,r0
 	and	r0,r4
-
 dinval_loop:
 	! Invalidate the O cache
 	ocbi	@r4		! r4
-	
-	mov	#0x10,r0	! r4 | 0x1000
-	shll8	r0
-	or	r4,r0
-	ocbi	@r0
-	
-	mov	#0x20,r0	! r4 | 0x2000
-	shll8	r0
-	or	r4,r0
-	ocbi	@r0
-	
-	mov	#0x30,r0	! r4 | 0x3000
-	shll8	r0
-	or	r4,r0
-	ocbi	@r0
-	
 	cmp/hs	r4,r5
 	bt/s	dinval_loop
 	add	#32,r4		! += L1_CACHE_BYTES
-
 	rts
 	nop
 
@@ -131,34 +119,69 @@ _dcache_flush_range:
 	add	r4,r5
 	mov.l	l1align,r0
 	and	r0,r4
-
 dflush_loop:
 	! Write back the O cache
 	ocbwb	@r4
-
-	mov	#0x10,r0	! r4 | 0x1000
-	shll8	r0
-	or	r4,r0
-	ocbwb	@r0
-	
-	mov	#0x20,r0	! r4 | 0x2000
-	shll8	r0
-	or	r4,r0
-	ocbwb	@r0
-	
-	mov	#0x30,r0	! r4 | 0x3000
-	shll8	r0
-	or	r4,r0
-	ocbwb	@r0
-	
 	cmp/hs	r4,r5
 	bt/s	dflush_loop
 	add	#32,r4		! += L1_CACHE_BYTES
-
+	rts
+	nop
+	
+! This routine just goes through and forces a write-back and invalidate
+! on the specified data range.
+! r4 is starting address
+! r5 is count
+_dcache_purge_range:
+	! Get ending address from count and align start address
+	add	r4,r5
+	mov.l	l1align,r0
+	and	r0,r4
+dpurge_loop:
+	! Write back and invalidate the O cache
+	ocbp	@r4
+	cmp/hs	r4,r5
+	bt/s	dpurge_loop
+	add	#32,r4		! += L1_CACHE_BYTES
 	rts
 	nop
 
-
+! This routine just prefetch to operand cache the
+! specified data range. 
+! r4 is starting address
+! r5 is count
+_dcache_pref_range:
+	! Get ending address from count and align start address
+	add	r4,r5
+	mov.l	l1align,r0
+	and	r0,r4
+dpref_loop:
+	! Prefetch to the O cache
+	pref @r4
+	cmp/hs	r4,r5
+	bt/s	dpref_loop
+	add	#32,r4		! += L1_CACHE_BYTES
+	rts
+	nop
+	
+! This routine just allocate operand cache for the
+! specified data range. 
+! r4 is starting address
+! r5 is count
+_dcache_alloc_range:
+	! Get ending address from count and align start address
+	add	r4,r5
+	mov.l	l1align,r0
+	and	r0,r4
+	mov #0,r0
+dalloc_loop:
+	! Allocate the O cache
+	movca.l r0, @r4
+	cmp/hs	r4,r5
+	bt/s	dalloc_loop
+	add	#32,r4		! += L1_CACHE_BYTES
+	rts
+	nop
 
 	.align	2
 l1align:
