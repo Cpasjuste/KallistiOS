@@ -63,7 +63,7 @@ export SH_GCC_URL=ftp.gnu.org/gnu/gcc/gcc-${SH_GCC_VER}/gcc-${SH_GCC_VER}.tar.${
 export NEWLIB_URL=sourceware.org/pub/newlib/newlib-${NEWLIB_VER}.tar.${NEWLIB_TARBALL_TYPE}
 export GDB_URL=ftp.gnu.org/gnu/gdb/gdb-${GDB_VER}.tar.${GDB_TARBALL_TYPE}
 export INSIGHT_URL=mirrors.kernel.org/sourceware/insight/releases/insight-${INSIGHT_VER}a.tar.${INSIGHT_TARBALL_TYPE}
-export ARM_BINUTILS_URL=ftp.gnu.org/gnu/binutils/binutils-${SH_BINUTILS_VER}.tar.${SH_BINUTILS_TARBALL_TYPE}
+export ARM_BINUTILS_URL=ftp.gnu.org/gnu/binutils/binutils-${ARM_BINUTILS_VER}.tar.${ARM_BINUTILS_TARBALL_TYPE}
 export ARM_GCC_URL=ftp.gnu.org/gnu/gcc/gcc-${ARM_GCC_VER}/gcc-${ARM_GCC_VER}.tar.${ARM_GCC_TARBALL_TYPE}
 
 export DOWNLOAD_PROTOCOL="`get_make_var download_protocol`://"

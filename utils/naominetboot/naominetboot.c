@@ -295,6 +295,11 @@ int main(int argc, char *argv[]) {
 
     memset(&naomi_addr, 0, sizeof(struct sockaddr_in));
 
+    if(argc < 5) {
+        usage(argv[0]);
+        exit(EXIT_FAILURE);
+    }
+   
     /* Parse arguments. */
     while((c = getopt(argc, argv, ":t:x:a")) != -1) {
         switch(c) {

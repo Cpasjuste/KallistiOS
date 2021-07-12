@@ -20,27 +20,43 @@
 
 */
 
+
+/* There's quite a bit of byte vs word conversion in this file
+ * these macros just help make that more readable */
+#define BYTES_TO_WORDS(x) ((x) >> 2)
+#define WORDS_TO_BYTES(x) ((x) << 2)
+
+#define IS_ALIGNED(x, m) ((x) % (m) == 0)
+
+#define LIST_ENABLED(i) (pvr_state.lists_enabled & (1 << i))
+
+
 /* Fill Tile Matrix buffers. This function takes a base address and sets up
    the rendering structures there. Each tile of the screen (32x32) receives
    a small buffer space. */
 static void pvr_init_tile_matrix(int which, int presort) {
     volatile pvr_ta_buffers_t   *buf;
-    int     x, y;
-    uint32      *vr;
-    volatile int    *opbs;
+    int     x, y, tn;
+    uint32      *vr;  /* Note: We're working in 4-byte pointer maths in this function */
+    volatile int    *opb_sizes;
     //uint32      matbase, opbbase;
 
     vr = (uint32*)PVR_RAM_BASE;
     buf = pvr_state.ta_buffers + which;
-    opbs = pvr_state.opb_size;
+    opb_sizes = pvr_state.opb_size;
 
 #if 0
     matbase = buf->tile_matrix;
     opbbase = buf->opb;
 #endif
 
+    /*
+        FIXME? Is this header necessary? If we're moving the tilematrix
+        register to after it, how does the Dreamcast know this is here?
+    */
+
     /* Header of zeros */
-    vr += buf->tile_matrix / 4;
+    vr += BYTES_TO_WORDS(buf->tile_matrix);
 
     for(x = 0; x < 0x48; x += 4)
         * vr++ = 0;
@@ -54,6 +70,9 @@ static void pvr_init_tile_matrix(int which, int presort) {
     vr[5] = 0x80000000;
     vr += 6;
 
+    /* Must skip over zeroed header for actual usage */
+    buf->tile_matrix += 0x48;
+
     /* Now the main tile matrix */
 #if 0
     dbglog(DBG_KDEBUG, "  Using poly buffers %08lx/%08lx/%08lx/%08lx/%08lx\r\n",
@@ -64,33 +83,45 @@ static void pvr_init_tile_matrix(int which, int presort) {
            buf->opb_type[4]);
 #endif  /* !NDEBUG */
 
+    /*
+        This sets up the addresses for each list, for each tile in the
+        memory we allocate in pvr_allocate_buffers. If a list isn't enabled
+        for a tile, then we set the address to 0x80000000 which tells the PVR
+        to ignore it.
+
+        Memory for each frame is arranged sort-of like this:
+
+        [vertex_buffer | object pointer buffers | tilematrix header | tile matrix]
+
+        This is the tile matrix setup.
+    */
+
     for(x = 0; x < pvr_state.tw; x++) {
         for(y = 0; y < pvr_state.th; y++) {
+            tn = (pvr_state.tw * y) + x;
+
             /* Control word */
             vr[0] = (y << 8) | (x << 2) | (presort << 29);
 
             /* Opaque poly buffer */
-            vr[1] = buf->opb_type[0] + opbs[0] * pvr_state.tw * y + opbs[0] * x;
+            vr[1] = LIST_ENABLED(0) ? buf->opb_addresses[0] + (opb_sizes[0] * tn) : 0x80000000;
 
             /* Opaque volume mod buffer */
-            vr[2] = buf->opb_type[1] + opbs[1] * pvr_state.tw * y + opbs[1] * x;
+            vr[2] = LIST_ENABLED(1) ? buf->opb_addresses[1] + (opb_sizes[1] * tn) : 0x80000000;
 
             /* Translucent poly buffer */
-            vr[3] = buf->opb_type[2] + opbs[2] * pvr_state.tw * y + opbs[2] * x;
+            vr[3] = LIST_ENABLED(2) ? buf->opb_addresses[2] + (opb_sizes[2] * tn) : 0x80000000;
 
             /* Translucent volume mod buffer */
-            vr[4] = buf->opb_type[3] + opbs[3] * pvr_state.tw * y + opbs[3] * x;
+            vr[4] = LIST_ENABLED(3) ? buf->opb_addresses[3] + (opb_sizes[3] * tn) : 0x80000000;
 
             /* Punch-thru poly buffer */
-            vr[5] = buf->opb_type[4] + opbs[4] * pvr_state.tw * y + opbs[4] * x;
+            vr[5] = LIST_ENABLED(4) ? buf->opb_addresses[4] + (opb_sizes[4] * tn) : 0x80000000;
             vr += 6;
         }
     }
 
     vr[-6] |= 1 << 31;
-
-    /* Must skip over zeroed header for actual usage */
-    buf->tile_matrix += 0x48;
 }
 
 /* Fill all tile matrices */
@@ -118,11 +149,13 @@ up and placed at 0x000000 and 0x400000.
 */
 #define BUF_ALIGN 128
 #define BUF_ALIGN_MASK (BUF_ALIGN - 1)
+#define APPLY_ALIGNMENT(addr) (((addr) + BUF_ALIGN_MASK) & ~BUF_ALIGN_MASK)
+
 void pvr_allocate_buffers(pvr_init_params_t *params) {
     volatile pvr_ta_buffers_t   *buf;
     volatile pvr_frame_buffers_t    *fbuf;
     int i, j;
-    uint32  outaddr, polybuf, sconst, polybuf_alloc;
+    uint32  outaddr, sconst, opb_size_accum, opb_total_size;
 
     /* Set screen sizes; pvr_init has ensured that we have a valid mode
        and all that by now, so we can freely dig into the vid_mode
@@ -138,7 +171,7 @@ void pvr_allocate_buffers(pvr_init_params_t *params) {
 
     /* We can actually handle non-mod-32 heights pretty easily -- just extend
        the frame buffer a bit, but use a pixel clip for the real mode. */
-    if((pvr_state.h % 32) != 0) {
+    if(!IS_ALIGNED(pvr_state.h, 32)) {
         pvr_state.h = (pvr_state.h + 32) & ~31;
         pvr_state.th++;
     }
@@ -157,13 +190,14 @@ void pvr_allocate_buffers(pvr_init_params_t *params) {
 
     /* Look at active lists and figure out how much to allocate
        for each poly type */
-    polybuf = 0;
+    opb_total_size = 0;
     pvr_state.list_reg_mask = 1 << 20;
 
     for(i = 0; i < PVR_OPB_COUNT; i++) {
-        pvr_state.opb_size[i] = params->opb_sizes[i] * 4;   /* in bytes */
-        pvr_state.opb_ind[i] = pvr_state.opb_size[i] * pvr_state.tw * pvr_state.th;
-        polybuf += pvr_state.opb_ind[i];
+        pvr_state.opb_size[i] = WORDS_TO_BYTES(params->opb_sizes[i]);   /* in bytes */
+
+        /* Calculate the total size of the OPBs for this list */
+        opb_total_size += pvr_state.opb_size[i] * pvr_state.tw * pvr_state.th;
 
         switch(params->opb_sizes[i]) {
             case PVR_BINSIZE_0:
@@ -208,40 +242,33 @@ void pvr_allocate_buffers(pvr_init_params_t *params) {
         buf->vertex = outaddr;
         buf->vertex_size = params->vertex_buf_size;
         outaddr += buf->vertex_size;
-
         /* N-byte align */
-        outaddr = (outaddr + BUF_ALIGN_MASK) & ~BUF_ALIGN_MASK;
+        outaddr = APPLY_ALIGNMENT(outaddr);
 
         /* Object Pointer Buffers */
-        /* XXX What the heck is this 0x50580 magic value?? All I
-           remember about it is that removing it makes it fail. */
-        buf->opb_size = 0x50580 + polybuf;
-        outaddr += buf->opb_size;
-        // buf->poly_buf_size = (outaddr - polybuf) - buf->vertex;
-        polybuf_alloc = buf->opb = outaddr - polybuf;
+        buf->opb = outaddr;
+        buf->opb_size = opb_total_size;
+        outaddr += opb_total_size;
 
+        /* Set up the opb pointers to each section */
+        opb_size_accum = 0;
         for(j = 0; j < PVR_OPB_COUNT; j++) {
-            if(pvr_state.opb_size[j] > 0) {
-                buf->opb_type[j] = polybuf_alloc;
-                polybuf_alloc += pvr_state.opb_ind[j];
-            }
-            else {
-                buf->opb_type[j] = 0x80000000;
-            }
+            buf->opb_addresses[j] = buf->opb + opb_size_accum;
+            opb_size_accum += pvr_state.opb_size[j] * pvr_state.tw * pvr_state.th;
         }
 
-        outaddr += buf->opb_size;   /* Do we _really_ need this twice? */
+        assert(buf->opb_size == opb_size_accum);
 
         /* N-byte align */
-        outaddr = (outaddr + BUF_ALIGN_MASK) & ~BUF_ALIGN_MASK;
+        outaddr = APPLY_ALIGNMENT(outaddr);
 
         /* Tile Matrix */
         buf->tile_matrix = outaddr;
-        buf->tile_matrix_size = (18 + 6 * pvr_state.tw * pvr_state.th) * 4;
+        buf->tile_matrix_size = WORDS_TO_BYTES(18 + 6 * pvr_state.tw * pvr_state.th);
         outaddr += buf->tile_matrix_size;
 
         /* N-byte align */
-        outaddr = (outaddr + BUF_ALIGN_MASK) & ~BUF_ALIGN_MASK;
+        outaddr = APPLY_ALIGNMENT(outaddr);
 
         /* Output buffer */
         fbuf->frame = outaddr;
@@ -249,7 +276,7 @@ void pvr_allocate_buffers(pvr_init_params_t *params) {
         outaddr += fbuf->frame_size;
 
         /* N-byte align */
-        outaddr = (outaddr + BUF_ALIGN_MASK) & ~BUF_ALIGN_MASK;
+        outaddr = APPLY_ALIGNMENT(outaddr);
     }
 
     /* Texture ram is whatever is left */
@@ -275,12 +302,6 @@ void pvr_allocate_buffers(pvr_init_params_t *params) {
     }
 
     dbglog(DBG_KDEBUG, "  list_mask %08lx\n", pvr_state.list_reg_mask);
-    dbglog(DBG_KDEBUG, "  opb sizes per type: %08lx/%08lx/%08lx/%08lx/%08lx\n",
-           pvr_state.opb_ind[0],
-           pvr_state.opb_ind[1],
-           pvr_state.opb_ind[2],
-           pvr_state.opb_ind[3],
-           pvr_state.opb_ind[4]);
     dbglog(DBG_KDEBUG, "  w/h = %d/%d, tw/th = %d/%d\n", pvr_state.w, pvr_state.h,
            pvr_state.tw, pvr_state.th);
     dbglog(DBG_KDEBUG, "  zclip %08lx\n", *((uint32*)&pvr_state.zclip));

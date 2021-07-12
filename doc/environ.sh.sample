@@ -17,7 +17,12 @@ export KOS_ARCH="dreamcast"
 #  "pristine" - a normal Dreamcast console or HKT-0120 devkit
 #  "navi" - a Dreamcast with the navi mod applied to it
 #  "naomi" - a NAOMI or NAOMI 2 arcade board
-export KOS_SUBARCH="pristine"
+# You can also pre-define it in eg the build config of your IDE
+if [ -z "${KOS_SUBARCH}" ] ; then
+    export KOS_SUBARCH="pristine"
+else
+    export KOS_SUBARCH
+fi
 
 # KOS main base path
 export KOS_BASE="/opt/toolchains/dc/kos"

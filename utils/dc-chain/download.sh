@@ -77,7 +77,7 @@ if [ -z "${CONFIG_GUESS_ONLY}" ]; then
   download "Newlib" "$NEWLIB_VER" "$NEWLIB_URL"
 
   # Downloading ARM components
-  download "Binutils" $ARM_BINUTILS_VER"" "$ARM_BINUTILS_URL"
+  download "Binutils" "$ARM_BINUTILS_VER" "$ARM_BINUTILS_URL"
   download "GCC" "$ARM_GCC_VER" "$ARM_GCC_URL"
   download_dependencies "arm"
 fi

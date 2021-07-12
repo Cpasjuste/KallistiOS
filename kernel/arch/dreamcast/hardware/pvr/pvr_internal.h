@@ -124,7 +124,7 @@
 typedef struct {
     uint32  vertex, vertex_size;            /* Vertex buffer */
     uint32  opb, opb_size;                  /* Object pointer buffers, size */
-    uint32  opb_type[PVR_OPB_COUNT];        /* Object pointer buffers (of each type) */
+    uint32  opb_addresses[PVR_OPB_COUNT];        /* Object pointer buffers (of each type) */
     uint32  tile_matrix, tile_matrix_size;  /* Tile matrix, size */
 } pvr_ta_buffers_t;
 
@@ -153,7 +153,6 @@ typedef struct {
     uint32  list_reg_mask;              // Active lists register mask
     int     dma_mode;                   // 1 if we are using DMA to transfer vertices
     int     opb_size[PVR_OPB_COUNT];    // opb size flags
-    uint32  opb_ind[PVR_OPB_COUNT];     // Individual opb sizes (in bytes)
 
     // Pipeline state
     int     ram_target;                 // RAM buffer we're writing into
