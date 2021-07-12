@@ -919,40 +919,6 @@ diff -ruN gcc-9.3.0/libgcc/config/sh/crt1.S gcc-9.3.0-kos/libgcc/config/sh/crt1.
 +	.word	0x090d
 +ccr_data_ocram:
 +	.word	0x092d
-diff -ruN gcc-9.3.0/libgcc/config/sh/crti.S gcc-9.3.0-kos/libgcc/config/sh/crti.S
---- gcc-9.3.0/libgcc/config/sh/crti.S	2020-03-12 18:07:23.000000000 +0700
-+++ gcc-9.3.0-kos/libgcc/config/sh/crti.S	2020-10-30 10:37:37.808055847 +0700
-@@ -22,8 +22,6 @@
- see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
- <http://www.gnu.org/licenses/>.  */
- 
--#include "crt.h"
--
- /* The code in sections .init and .fini is supposed to be a single
-    regular function.  The function in .init is called directly from
-    start in crt1.S.  The function in .fini is atexit()ed in crt1.S
-@@ -45,8 +43,8 @@
- #else
- 	.p2align 1
- #endif
--	.global	 GLOBAL(_init)
--GLOBAL(_init):
-+	.global	 _init
-+_init:
- #ifdef __ELF__
- 	mov.l	r12,@-r15
- 	mova	0f,r0
-@@ -76,8 +74,8 @@
- #else
- 	.p2align 1
- #endif
--	.global  GLOBAL(_fini)
--GLOBAL(_fini):	
-+	.global  _fini
-+_fini:	
- #ifdef __ELF__
- 	mov.l	r12,@-r15
- 	mova	0f,r0
 diff -ruN gcc-9.3.0/libgcc/config/sh/fake-kos.S gcc-9.3.0-kos/libgcc/config/sh/fake-kos.S
 --- gcc-9.3.0/libgcc/config/sh/fake-kos.S	1970-01-01 07:00:00.000000000 +0700
 +++ gcc-9.3.0-kos/libgcc/config/sh/fake-kos.S	2020-10-30 10:37:37.808055847 +0700
